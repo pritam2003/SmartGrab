@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 const bootstrapAdminEmail = 'admin@smartgrab.com';
 
@@ -17,11 +18,92 @@ class SmartGrabApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const primaryBlue = Color(0xFF2B7DE9);
+    const secondaryBlue = Color(0xFF4FB6FF);
+    const surfaceBlue = Color(0xFFF1F6FF);
+    const surfaceHigh = Color(0xFFE3EEFF);
+    const onSurface = Color(0xFF0E1B2B);
+
+    final colorScheme = const ColorScheme.light().copyWith(
+      primary: primaryBlue,
+      onPrimary: Colors.white,
+      secondary: secondaryBlue,
+      onSecondary: Colors.white,
+      surface: surfaceBlue,
+      onSurface: onSurface,
+      surfaceContainerHighest: surfaceHigh,
+    );
+
+    const lightWeight = FontWeight.w600;
+    final baseTextTheme = GoogleFonts.interTextTheme().apply(
+      bodyColor: onSurface,
+      displayColor: onSurface,
+    );
+    final textTheme = baseTextTheme.copyWith(
+      displayLarge: baseTextTheme.displayLarge?.copyWith(fontWeight: lightWeight),
+      displayMedium: baseTextTheme.displayMedium?.copyWith(fontWeight: lightWeight),
+      displaySmall: baseTextTheme.displaySmall?.copyWith(fontWeight: lightWeight),
+      headlineLarge: baseTextTheme.headlineLarge?.copyWith(fontWeight: lightWeight),
+      headlineMedium: baseTextTheme.headlineMedium?.copyWith(fontWeight: lightWeight),
+      headlineSmall: baseTextTheme.headlineSmall?.copyWith(fontWeight: lightWeight),
+      titleLarge: baseTextTheme.titleLarge?.copyWith(fontWeight: lightWeight),
+      titleMedium: baseTextTheme.titleMedium?.copyWith(fontWeight: lightWeight),
+      titleSmall: baseTextTheme.titleSmall?.copyWith(fontWeight: lightWeight),
+      bodyLarge: baseTextTheme.bodyLarge?.copyWith(fontWeight: lightWeight),
+      bodyMedium: baseTextTheme.bodyMedium?.copyWith(fontWeight: lightWeight),
+      bodySmall: baseTextTheme.bodySmall?.copyWith(fontWeight: lightWeight),
+      labelLarge: baseTextTheme.labelLarge?.copyWith(fontWeight: lightWeight),
+      labelMedium: baseTextTheme.labelMedium?.copyWith(fontWeight: lightWeight),
+      labelSmall: baseTextTheme.labelSmall?.copyWith(fontWeight: lightWeight),
+    );
+
     return MaterialApp(
       title: 'SmartGrab',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F7A8C)),
+        colorScheme: colorScheme,
         useMaterial3: true,
+        scaffoldBackgroundColor: surfaceBlue,
+        textTheme: textTheme,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: primaryBlue,
+          foregroundColor: Colors.white,
+        ),
+        cardTheme: CardThemeData(
+          color: surfaceHigh,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: const OutlineInputBorder(),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: primaryBlue.withAlpha(64)),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderSide: const BorderSide(color: primaryBlue, width: 1.4),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          fillColor: Colors.white,
+          filled: true,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: primaryBlue,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: primaryBlue,
+            side: BorderSide(color: primaryBlue.withAlpha(153)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ),
       home: const AuthGate(),
     );
@@ -246,15 +328,27 @@ class _MainShellState extends State<MainShell> {
           padding: EdgeInsets.zero,
           children: [
             UserAccountsDrawerHeader(
-              accountName: Text(widget.profile.isAdmin ? 'Admin' : 'User'),
-              accountEmail: Text(widget.profile.email),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              accountName: Text(
+                widget.profile.isAdmin ? 'Admin' : 'User',
+                style: const TextStyle(color: Colors.white),
+              ),
+              accountEmail: Text(
+                widget.profile.email,
+                style: const TextStyle(color: Colors.white70),
+              ),
               currentAccountPicture: CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primary,
+                backgroundColor: Colors.white,
                 child: Text(
                   widget.profile.email.isNotEmpty
                       ? widget.profile.email[0].toUpperCase()
                       : 'S',
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -656,9 +750,6 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
