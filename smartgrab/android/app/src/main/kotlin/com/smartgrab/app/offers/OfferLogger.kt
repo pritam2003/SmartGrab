@@ -45,6 +45,19 @@ class OfferLogger(private val context: Context) {
             "createdAt" to FieldValue.serverTimestamp()
         )
 
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val lat = prefs.getString(KEY_LAST_LAT, null)?.toDoubleOrNull()
+        val lng = prefs.getString(KEY_LAST_LNG, null)?.toDoubleOrNull()
+        val locTime = prefs.getLong(KEY_LAST_LOC_TIME, 0L)
+
+        if (lat != null && lng != null) {
+            payload["lat"] = lat
+            payload["lng"] = lng
+        }
+        if (locTime > 0) {
+            payload["locationAt"] = Timestamp(locTime / 1000, 0)
+        }
+
         firestore
             .collection("users")
             .document(uid)
@@ -55,6 +68,9 @@ class OfferLogger(private val context: Context) {
     companion object {
         private const val PREFS = "smartgrab"
         private const val KEY_USER_UID = "user_uid"
+        private const val KEY_LAST_LAT = "last_lat"
+        private const val KEY_LAST_LNG = "last_lng"
+        private const val KEY_LAST_LOC_TIME = "last_loc_time"
         private const val MIN_LOG_INTERVAL_MS = 2500L
         private const val MAX_RAW_CHARS = 2000
     }

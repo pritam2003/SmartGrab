@@ -91,6 +91,18 @@ class MainActivity : FlutterActivity() {
                     prefs.edit().remove("user_uid").apply()
                     result.success(true)
                 }
+                "setLastLocation" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val lat = (args?.get("lat") as? Number)?.toDouble()
+                    val lng = (args?.get("lng") as? Number)?.toDouble()
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("last_lat", lat?.toString())
+                        .putString("last_lng", lng?.toString())
+                        .putLong("last_loc_time", System.currentTimeMillis())
+                        .apply()
+                    result.success(true)
+                }
                 "setDecisionSettings" -> {
                     val args = call.arguments as? Map<*, *>
                     val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)

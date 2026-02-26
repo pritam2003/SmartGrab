@@ -5,7 +5,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
+
+import 'hotzones.dart';
 
 const bootstrapAdminEmail = 'admin@smartgrab.com';
 
@@ -410,6 +415,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String _lastCaptureApp = '';
   int _lastCaptureCount = 0;
   Timer? _debugTimer;
+  bool _locationEnabled = false;
+  DateTime? _lastLocationTime;
+  String _lastLocationText = '';
+  Timer? _locationTimer;
   bool _loading = true;
   bool _saving = false;
 
@@ -422,6 +431,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _debugTimer?.cancel();
+    _locationTimer?.cancel();
     _minPayController.dispose();
     _maxDistanceController.dispose();
     _costPerKmController.dispose();
@@ -456,6 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastCaptureCount = debugSnapshot.lastCaptureCount;
       });
       _configureDebugTimer(debugSnapshot.enabled);
+      _configureLocationTimer(online);
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -488,6 +499,68 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _configureLocationTimer(bool enabled) {
+    if (enabled) {
+      _locationTimer?.cancel();
+      _locationTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => _updateLocation(),
+      );
+      _updateLocation();
+    } else {
+      _locationTimer?.cancel();
+      _locationTimer = null;
+    }
+  }
+
+  Future<void> _updateLocation() async {
+    final available = await Geolocator.isLocationServiceEnabled();
+    if (!available) {
+      if (!mounted) return;
+      setState(() {
+        _locationEnabled = false;
+        _lastLocationText = 'Location services off';
+      });
+      return;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
+      setState(() {
+        _locationEnabled = false;
+        _lastLocationText = 'Permission denied';
+      });
+      return;
+    }
+
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.medium,
+        timeLimit: Duration(seconds: 10),
+      ),
+    );
+    final lat = position.latitude;
+    final lng = position.longitude;
+    await _bridge.setLastLocation(lat, lng);
+
+    if (!mounted) return;
+    setState(() {
+      _locationEnabled = true;
+      _lastLocationTime = DateTime.now();
+      _lastLocationText = '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
+    });
+  }
+
+  Future<void> _openLocationSettings() async {
+    await Geolocator.openLocationSettings();
+  }
+
   Future<void> _saveSettings() async {
     final minPay = double.tryParse(_minPayController.text) ?? 7.0;
     final maxDistance = double.tryParse(_maxDistanceController.text) ?? 12.0;
@@ -514,6 +587,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await _bridge.setOnline(next);
     await _userService.setOnline(widget.profile.uid, next);
     setState(() => _online = next);
+    _configureLocationTimer(next);
   }
 
   Future<void> _toggleDebug(bool enabled) async {
@@ -626,6 +700,53 @@ class _HomeScreenState extends State<HomeScreen> {
                     onPressed: _loading ? null : _refreshStatus,
                     icon: const Icon(Icons.refresh),
                     label: const Text('Refresh'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
+          title: 'Location',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _StatusRow(
+                label: 'Location access',
+                value: _locationEnabled ? 'Enabled' : 'Disabled',
+                valueColor: _locationEnabled
+                    ? Colors.green
+                    : Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _lastLocationText.isEmpty
+                    ? 'No location captured yet.'
+                    : 'Last location: $_lastLocationText',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatLocationTime(_lastLocationTime),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _updateLocation,
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('Update Location'),
+                  ),
+                  TextButton(
+                    onPressed: _openLocationSettings,
+                    child: const Text('Open Settings'),
                   ),
                 ],
               ),
@@ -829,6 +950,16 @@ class _HomeScreenState extends State<HomeScreen> {
         '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
     return 'Last capture: $date $hour:$minute';
   }
+
+  String _formatLocationTime(DateTime? time) {
+    if (time == null) return 'Location not updated yet.';
+    final local = time.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final date =
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+    return 'Updated: $date $hour:$minute';
+  }
 }
 
 class AccountScreen extends StatelessWidget {
@@ -882,52 +1013,152 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!profile.isAdmin) {
-      return const Center(
-        child: Text('Admin access required.'),
-      );
-    }
+    final offerLogService = OfferLogService();
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _SectionCard(
-          title: 'Admin Metrics',
-          child: FutureBuilder<AdminMetrics>(
-            future: AdminService().fetchMetrics(),
+          title: 'Per-Hour Earnings',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('No earnings data yet.'),
+              const SizedBox(height: 8),
+              Text(
+                'Once offers are logged, we will chart earnings by hour.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
+          title: 'Hotzones Map',
+          child: StreamBuilder<List<HotzonePoint>>(
+            stream: offerLogService.streamHotzonePoints(profile.uid),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Text('Loading metrics...');
+                return const Text('Loading hotzones...');
               }
-              if (snapshot.hasError || snapshot.data == null) {
-                return const Text('Failed to load metrics.');
+              if (snapshot.hasError) {
+                return const Text('Failed to load hotzones.');
+              }
+              final points = snapshot.data ?? [];
+              if (points.isEmpty) {
+                return const Text(
+                  'No locations yet. Go online to log offers with location.',
+                );
               }
 
-              final metrics = snapshot.data!;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Total users: ${metrics.totalUsers}'),
-                  const SizedBox(height: 6),
-                  Text('Active users (7d): ${metrics.activeUsers}'),
-                  const SizedBox(height: 6),
-                  Text('Daily active users: ${metrics.dailyActiveUsers}'),
-                  const SizedBox(height: 6),
-                  Text('Online today: ${metrics.onlineToday}'),
-                  const SizedBox(height: 6),
-                  Text('Currently online: ${metrics.onlineNow}'),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Metrics update from Firestore user activity.',
-                    style: Theme.of(context).textTheme.bodySmall,
+              final hotzones = computeHotzones(points);
+              final center = _averageLatLng(points);
+              final maxCount =
+                  hotzones.isEmpty ? 1 : hotzones.first.count.clamp(1, 20);
+
+              return SizedBox(
+                height: 280,
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: center,
+                    initialZoom: 12,
+                    interactionOptions: const InteractionOptions(
+                      flags: InteractiveFlag.drag |
+                          InteractiveFlag.pinchZoom |
+                          InteractiveFlag.doubleTapZoom,
+                    ),
                   ),
-                ],
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.smartgrab.app',
+                    ),
+                    RichAttributionWidget(
+                      showFlutterMapAttribution: false,
+                      attributions: const [
+                        TextSourceAttribution('OpenStreetMap contributors'),
+                      ],
+                    ),
+                    CircleLayer(
+                      circles: hotzones.map((zone) {
+                        final intensity =
+                            (zone.count / maxCount).clamp(0.2, 1.0);
+                        final radius = 120.0 + (zone.count * 40);
+                        return CircleMarker(
+                          point: LatLng(zone.lat, zone.lng),
+                          radius: radius,
+                          useRadiusInMeter: true,
+                          color: _hotzoneColor(intensity),
+                          borderStrokeWidth: 1,
+                          borderColor: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withAlpha(160),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               );
             },
           ),
         ),
+        if (profile.isAdmin) ...[
+          const SizedBox(height: 16),
+          _SectionCard(
+            title: 'Admin Metrics',
+            child: FutureBuilder<AdminMetrics>(
+              future: AdminService().fetchMetrics(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Text('Loading metrics...');
+                }
+                if (snapshot.hasError || snapshot.data == null) {
+                  return const Text('Failed to load metrics.');
+                }
+
+                final metrics = snapshot.data!;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Total users: ${metrics.totalUsers}'),
+                    const SizedBox(height: 6),
+                    Text('Active users (7d): ${metrics.activeUsers}'),
+                    const SizedBox(height: 6),
+                    Text('Daily active users: ${metrics.dailyActiveUsers}'),
+                    const SizedBox(height: 6),
+                    Text('Online today: ${metrics.onlineToday}'),
+                    const SizedBox(height: 6),
+                    Text('Currently online: ${metrics.onlineNow}'),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Metrics update from Firestore user activity.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  LatLng _averageLatLng(List<HotzonePoint> points) {
+    double lat = 0;
+    double lng = 0;
+    for (final point in points) {
+      lat += point.lat;
+      lng += point.lng;
+    }
+    return LatLng(lat / points.length, lng / points.length);
+  }
+
+  Color _hotzoneColor(double intensity) {
+    final base = const Color(0xFF2B7DE9);
+    return base.withAlpha((80 + (120 * intensity)).toInt());
   }
 }
 
@@ -1127,6 +1358,13 @@ class PlatformBridge {
 
   Future<void> clearUserUid() async {
     await _channel.invokeMethod('clearUserUid');
+  }
+
+  Future<void> setLastLocation(double lat, double lng) async {
+    await _channel.invokeMethod('setLastLocation', {
+      'lat': lat,
+      'lng': lng,
+    });
   }
 
   Future<void> setDebugEnabled(bool enabled) async {
@@ -1353,6 +1591,8 @@ class OfferLog {
     required this.distanceKm,
     required this.shouldAccept,
     required this.clientAt,
+    required this.lat,
+    required this.lng,
   });
 
   final String id;
@@ -1361,6 +1601,8 @@ class OfferLog {
   final double distanceKm;
   final bool shouldAccept;
   final DateTime? clientAt;
+  final double? lat;
+  final double? lng;
 
   String get timeLabel {
     if (clientAt == null) return 'Time unknown';
@@ -1378,6 +1620,8 @@ class OfferLog {
     final shouldAccept = map['shouldAccept'] as bool? ?? false;
     final app = map['app'] as String? ?? 'Unknown';
     final clientAt = map['clientAt'] as Timestamp?;
+    final lat = (map['lat'] as num?)?.toDouble();
+    final lng = (map['lng'] as num?)?.toDouble();
 
     return OfferLog(
       id: id,
@@ -1386,6 +1630,8 @@ class OfferLog {
       distanceKm: distance,
       shouldAccept: shouldAccept,
       clientAt: clientAt?.toDate(),
+      lat: lat,
+      lng: lng,
     );
   }
 }
@@ -1404,6 +1650,23 @@ class OfferLogService {
         .map(
           (snapshot) => snapshot.docs
               .map((doc) => OfferLog.fromMap(doc.id, doc.data()))
+              .toList(),
+        );
+  }
+
+  Stream<List<HotzonePoint>> streamHotzonePoints(String uid) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('offer_logs')
+        .orderBy('clientAt', descending: true)
+        .limit(200)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => OfferLog.fromMap(doc.id, doc.data()))
+              .where((log) => log.lat != null && log.lng != null)
+              .map((log) => HotzonePoint(lat: log.lat!, lng: log.lng!))
               .toList(),
         );
   }

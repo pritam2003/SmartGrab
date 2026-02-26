@@ -8,6 +8,7 @@ SmartGrab is an Android-first decision-assist app for gig workers. It reads on-s
 - Recommendation overlays + notifications
 - Firebase Auth + Firestore user profiles and admin metrics
 - Admin dashboard with user activity stats
+- Hotzones map from logged offer locations
 
 ## Tech Stack
 - Flutter (Dart)
@@ -44,6 +45,7 @@ SmartGrab requires the following permissions to work:
 - Accessibility Service (screen parsing)
 - Overlay permission (recommendation bubble)
 - Notifications
+- Location (hotzones map)
 
 ## Admin Access
 Admin access is controlled in Firestore:
