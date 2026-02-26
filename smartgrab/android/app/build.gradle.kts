@@ -45,5 +45,7 @@ flutter {
 }
 
 dependencies {
+    implementation("com.google.firebase:firebase-firestore-ktx:25.1.0")
+    implementation("com.google.firebase:firebase-auth-ktx:23.1.0")
     testImplementation("junit:junit:4.13.2")
 }

@@ -80,6 +80,17 @@ class MainActivity : FlutterActivity() {
                     val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
                     result.success(prefs.getInt("last_capture_count", 0))
                 }
+                "setUserUid" -> {
+                    val uid = call.arguments as? String
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    prefs.edit().putString("user_uid", uid).apply()
+                    result.success(true)
+                }
+                "clearUserUid" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    prefs.edit().remove("user_uid").apply()
+                    result.success(true)
+                }
                 "setDecisionSettings" -> {
                     val args = call.arguments as? Map<*, *>
                     val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)

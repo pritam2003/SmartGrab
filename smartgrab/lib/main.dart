@@ -305,10 +305,12 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
   late final List<Widget> _pages;
+  final _bridge = PlatformBridge();
 
   @override
   void initState() {
     super.initState();
+    _bridge.setUserUid(widget.profile.uid);
     _pages = [
       HomeScreen(profile: widget.profile),
       AccountScreen(profile: widget.profile),
@@ -392,6 +394,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _bridge = PlatformBridge();
   final _userService = UserService();
+  final _offerLogService = OfferLogService();
   final _minPayController = TextEditingController();
   final _maxDistanceController = TextEditingController();
   final _costPerKmController = TextEditingController();
@@ -662,6 +665,35 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 16),
         _SectionCard(
+          title: 'Offer History',
+          child: StreamBuilder<List<OfferLog>>(
+            stream: _offerLogService.streamUserLogs(widget.profile.uid),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Text('Loading history...');
+              }
+              if (snapshot.hasError) {
+                return const Text('Failed to load history.');
+              }
+              final logs = snapshot.data ?? [];
+              if (logs.isEmpty) {
+                return const Text('No offers logged yet.');
+              }
+              return Column(
+                children: logs
+                    .map(
+                      (log) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _OfferLogTile(log: log),
+                      ),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
           title: 'Live Debug',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -821,7 +853,10 @@ class AccountScreen extends StatelessWidget {
               Text('Role: ${profile.isAdmin ? 'Admin' : 'User'}'),
               const SizedBox(height: 12),
               FilledButton.icon(
-                onPressed: () => FirebaseAuth.instance.signOut(),
+                onPressed: () async {
+                  await PlatformBridge().clearUserUid();
+                  await FirebaseAuth.instance.signOut();
+                },
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign Out'),
               ),
@@ -915,6 +950,68 @@ class _SectionCard extends StatelessWidget {
             child,
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _OfferLogTile extends StatelessWidget {
+  const _OfferLogTile({required this.log});
+
+  final OfferLog log;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = log.shouldAccept ? Colors.green : Colors.orange;
+    final statusText = log.shouldAccept ? 'Accept' : 'Skip';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withAlpha(30),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${log.app} • \$${log.pay.toStringAsFixed(2)} • ${log.distanceKm.toStringAsFixed(1)} km',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  log.timeLabel,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            statusText,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: statusColor),
+          ),
+        ],
       ),
     );
   }
@@ -1022,6 +1119,14 @@ class PlatformBridge {
 
   Future<void> setOnline(bool online) async {
     await _channel.invokeMethod('setOnline', online);
+  }
+
+  Future<void> setUserUid(String uid) async {
+    await _channel.invokeMethod('setUserUid', uid);
+  }
+
+  Future<void> clearUserUid() async {
+    await _channel.invokeMethod('clearUserUid');
   }
 
   Future<void> setDebugEnabled(bool enabled) async {
@@ -1237,5 +1342,69 @@ class AdminService {
       onlineToday: onlineTodaySnap.size,
       onlineNow: onlineNowSnap.size,
     );
+  }
+}
+
+class OfferLog {
+  const OfferLog({
+    required this.id,
+    required this.app,
+    required this.pay,
+    required this.distanceKm,
+    required this.shouldAccept,
+    required this.clientAt,
+  });
+
+  final String id;
+  final String app;
+  final double pay;
+  final double distanceKm;
+  final bool shouldAccept;
+  final DateTime? clientAt;
+
+  String get timeLabel {
+    if (clientAt == null) return 'Time unknown';
+    final local = clientAt!.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final date =
+        '${local.month.toString().padLeft(2, '0')}/${local.day.toString().padLeft(2, '0')}';
+    return '$date $hour:$minute';
+  }
+
+  factory OfferLog.fromMap(String id, Map<String, dynamic> map) {
+    final pay = (map['pay'] as num?)?.toDouble() ?? 0.0;
+    final distance = (map['distanceKm'] as num?)?.toDouble() ?? 0.0;
+    final shouldAccept = map['shouldAccept'] as bool? ?? false;
+    final app = map['app'] as String? ?? 'Unknown';
+    final clientAt = map['clientAt'] as Timestamp?;
+
+    return OfferLog(
+      id: id,
+      app: app,
+      pay: pay,
+      distanceKm: distance,
+      shouldAccept: shouldAccept,
+      clientAt: clientAt?.toDate(),
+    );
+  }
+}
+
+class OfferLogService {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  Stream<List<OfferLog>> streamUserLogs(String uid) {
+    return _db
+        .collection('users')
+        .doc(uid)
+        .collection('offer_logs')
+        .orderBy('clientAt', descending: true)
+        .limit(6)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => OfferLog.fromMap(doc.id, doc.data()))
+              .toList(),
+        );
   }
 }

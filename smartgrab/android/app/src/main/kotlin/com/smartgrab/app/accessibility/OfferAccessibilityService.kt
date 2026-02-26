@@ -9,12 +9,14 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.smartgrab.app.notify.OfferNotifier
 import com.smartgrab.app.offers.DecisionEngine
 import com.smartgrab.app.offers.GigApp
+import com.smartgrab.app.offers.OfferLogger
 import com.smartgrab.app.offers.OfferParser
 import com.smartgrab.app.overlay.OfferOverlay
 
 class OfferAccessibilityService : AccessibilityService() {
     private lateinit var notifier: OfferNotifier
     private lateinit var overlay: OfferOverlay
+    private lateinit var logger: OfferLogger
 
     private var lastRecommendation: String? = null
     private var lastRecommendationTime = 0L
@@ -23,6 +25,7 @@ class OfferAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         notifier = OfferNotifier(this)
         overlay = OfferOverlay(this)
+        logger = OfferLogger(this)
 
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
@@ -60,6 +63,7 @@ class OfferAccessibilityService : AccessibilityService() {
         if (offer.app == GigApp.UNKNOWN) return
 
         val decision = DecisionEngine.evaluate(this, offer)
+        logger.logOffer(packageName, offer, decision)
         if (!decision.shouldAccept) return
 
         val payText = String.format("%.2f", offer.pay)
