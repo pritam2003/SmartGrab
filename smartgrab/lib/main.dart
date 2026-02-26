@@ -1006,14 +1006,23 @@ class AccountScreen extends StatelessWidget {
   }
 }
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, required this.profile});
 
   final UserProfile profile;
 
   @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final offerLogService = OfferLogService();
+  HotzoneRange _range = HotzoneRange.last7d;
+
+  @override
   Widget build(BuildContext context) {
-    final offerLogService = OfferLogService();
+    final profile = widget.profile;
+    final rangeDuration = _range.duration;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1035,73 +1044,117 @@ class DashboardScreen extends StatelessWidget {
         const SizedBox(height: 16),
         _SectionCard(
           title: 'Hotzones Map',
-          child: StreamBuilder<List<HotzonePoint>>(
-            stream: offerLogService.streamHotzonePoints(profile.uid),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Text('Loading hotzones...');
-              }
-              if (snapshot.hasError) {
-                return const Text('Failed to load hotzones.');
-              }
-              final points = snapshot.data ?? [];
-              if (points.isEmpty) {
-                return const Text(
-                  'No locations yet. Go online to log offers with location.',
-                );
-              }
-
-              final hotzones = computeHotzones(points);
-              final center = _averageLatLng(points);
-              final maxCount =
-                  hotzones.isEmpty ? 1 : hotzones.first.count.clamp(1, 20);
-
-              return SizedBox(
-                height: 280,
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: center,
-                    initialZoom: 12,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.drag |
-                          InteractiveFlag.pinchZoom |
-                          InteractiveFlag.doubleTapZoom,
-                    ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SegmentedButton<HotzoneRange>(
+                segments: const [
+                  ButtonSegment(
+                    value: HotzoneRange.last24h,
+                    label: Text('24h'),
                   ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.smartgrab.app',
-                    ),
-                    RichAttributionWidget(
-                      showFlutterMapAttribution: false,
-                      attributions: const [
-                        TextSourceAttribution('OpenStreetMap contributors'),
+                  ButtonSegment(
+                    value: HotzoneRange.last7d,
+                    label: Text('7d'),
+                  ),
+                  ButtonSegment(
+                    value: HotzoneRange.last30d,
+                    label: Text('30d'),
+                  ),
+                ],
+                selected: {_range},
+                onSelectionChanged: (selection) {
+                  setState(() => _range = selection.first);
+                },
+              ),
+              const SizedBox(height: 12),
+              StreamBuilder<List<HotzonePoint>>(
+                stream: offerLogService.streamHotzonePoints(
+                  profile.uid,
+                  window: rangeDuration,
+                ),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Text('Loading hotzones...');
+                  }
+                  if (snapshot.hasError) {
+                    return const Text('Failed to load hotzones.');
+                  }
+                  final points = snapshot.data ?? [];
+                  if (points.isEmpty) {
+                    return const Text(
+                      'No locations yet. Go online to log offers with location.',
+                    );
+                  }
+
+                  final hotzones = computeHotzones(points);
+                  final center = _averageLatLng(points);
+                  final maxCount =
+                      hotzones.isEmpty ? 1 : hotzones.first.count.clamp(1, 20);
+
+                  return SizedBox(
+                    height: 280,
+                    child: Stack(
+                      children: [
+                        FlutterMap(
+                          options: MapOptions(
+                            initialCenter: center,
+                            initialZoom: 12,
+                            interactionOptions: const InteractionOptions(
+                              flags: InteractiveFlag.drag |
+                                  InteractiveFlag.pinchZoom |
+                                  InteractiveFlag.doubleTapZoom,
+                            ),
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.smartgrab.app',
+                            ),
+                            RichAttributionWidget(
+                              showFlutterMapAttribution: false,
+                              attributions: const [
+                                TextSourceAttribution(
+                                  'OpenStreetMap contributors',
+                                ),
+                              ],
+                            ),
+                            CircleLayer(
+                              circles: hotzones.map((zone) {
+                                final intensity =
+                                    (zone.count / maxCount).clamp(0.2, 1.0);
+                                final radius = 120.0 + (zone.count * 40);
+                                return CircleMarker(
+                                  point: LatLng(zone.lat, zone.lng),
+                                  radius: radius,
+                                  useRadiusInMeter: true,
+                                  color: _hotzoneColor(intensity),
+                                  borderStrokeWidth: 1,
+                                  borderColor: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withAlpha(160),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                        Positioned(
+                          right: 12,
+                          top: 12,
+                          child: _Legend(
+                            lowColor: _hotzoneColor(0.2),
+                            midColor: _hotzoneColor(0.6),
+                            highColor: _hotzoneColor(1.0),
+                          ),
+                        ),
                       ],
                     ),
-                    CircleLayer(
-                      circles: hotzones.map((zone) {
-                        final intensity =
-                            (zone.count / maxCount).clamp(0.2, 1.0);
-                        final radius = 120.0 + (zone.count * 40);
-                        return CircleMarker(
-                          point: LatLng(zone.lat, zone.lng),
-                          radius: radius,
-                          useRadiusInMeter: true,
-                          color: _hotzoneColor(intensity),
-                          borderStrokeWidth: 1,
-                          borderColor: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withAlpha(160),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              );
-            },
+                  );
+                },
+              ),
+            ],
           ),
         ),
         if (profile.isAdmin) ...[
@@ -1160,6 +1213,16 @@ class DashboardScreen extends StatelessWidget {
     final base = const Color(0xFF2B7DE9);
     return base.withAlpha((80 + (120 * intensity)).toInt());
   }
+}
+
+enum HotzoneRange {
+  last24h(Duration(hours: 24)),
+  last7d(Duration(days: 7)),
+  last30d(Duration(days: 30));
+
+  const HotzoneRange(this.duration);
+
+  final Duration duration;
 }
 
 class _SectionCard extends StatelessWidget {
@@ -1271,6 +1334,84 @@ class _StatusRow extends StatelessWidget {
               Theme.of(context).textTheme.bodyMedium?.copyWith(color: valueColor),
         ),
       ],
+    );
+  }
+}
+
+class _Legend extends StatelessWidget {
+  const _Legend({
+    required this.lowColor,
+    required this.midColor,
+    required this.highColor,
+  });
+
+  final Color lowColor;
+  final Color midColor;
+  final Color highColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(230),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.primary.withAlpha(40),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(20),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Intensity',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              _LegendDot(color: lowColor),
+              const SizedBox(width: 4),
+              _LegendDot(color: midColor),
+              const SizedBox(width: 4),
+              _LegendDot(color: highColor),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Low → High',
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: Colors.grey[700]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
     );
   }
 }
@@ -1654,15 +1795,22 @@ class OfferLogService {
         );
   }
 
-  Stream<List<HotzonePoint>> streamHotzonePoints(String uid) {
-    return _db
+  Stream<List<HotzonePoint>> streamHotzonePoints(
+    String uid, {
+    Duration? window,
+  }) {
+    Query<Map<String, dynamic>> query = _db
         .collection('users')
         .doc(uid)
         .collection('offer_logs')
-        .orderBy('clientAt', descending: true)
-        .limit(200)
-        .snapshots()
-        .map(
+        .orderBy('clientAt', descending: true);
+
+    if (window != null) {
+      final since = Timestamp.fromDate(DateTime.now().subtract(window));
+      query = query.where('clientAt', isGreaterThanOrEqualTo: since);
+    }
+
+    return query.limit(200).snapshots().map(
           (snapshot) => snapshot.docs
               .map((doc) => OfferLog.fromMap(doc.id, doc.data()))
               .where((log) => log.lat != null && log.lng != null)
