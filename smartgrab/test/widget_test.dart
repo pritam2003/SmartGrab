@@ -5,16 +5,17 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:smartgrab/main.dart';
 
 void main() {
-  testWidgets('SmartGrab loads', (WidgetTester tester) async {
-    await tester.pumpWidget(const SmartGrabApp());
+  testWidgets('Login screen renders', (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
 
     expect(find.text('SmartGrab'), findsWidgets);
-    expect(find.text('Status'), findsOneWidget);
-    expect(find.text('Decision Settings'), findsOneWidget);
+    expect(find.text('Sign In'), findsWidgets);
+    expect(find.text('Sign Up'), findsWidgets);
   });
 }

@@ -60,6 +60,26 @@ class MainActivity : FlutterActivity() {
                     val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
                     result.success(prefs.getBoolean("online", false))
                 }
+                "getDebugEnabled" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    result.success(prefs.getBoolean("debug_enabled", false))
+                }
+                "getLastCapture" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    result.success(prefs.getString("last_capture", "") ?: "")
+                }
+                "getLastCaptureTime" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    result.success(prefs.getLong("last_capture_time", 0L))
+                }
+                "getLastCaptureApp" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    result.success(prefs.getString("last_capture_app", "") ?: "")
+                }
+                "getLastCaptureCount" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    result.success(prefs.getInt("last_capture_count", 0))
+                }
                 "setDecisionSettings" -> {
                     val args = call.arguments as? Map<*, *>
                     val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
@@ -80,6 +100,22 @@ class MainActivity : FlutterActivity() {
                     val isOnline = call.arguments as? Boolean ?: false
                     val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
                     prefs.edit().putBoolean("online", isOnline).apply()
+                    result.success(true)
+                }
+                "setDebugEnabled" -> {
+                    val enabled = call.arguments as? Boolean ?: false
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    prefs.edit().putBoolean("debug_enabled", enabled).apply()
+                    result.success(true)
+                }
+                "clearLastCapture" -> {
+                    val prefs = getSharedPreferences("smartgrab", MODE_PRIVATE)
+                    prefs.edit()
+                        .remove("last_capture")
+                        .remove("last_capture_time")
+                        .remove("last_capture_app")
+                        .remove("last_capture_count")
+                        .apply()
                     result.success(true)
                 }
                 "simulateOffer" -> {

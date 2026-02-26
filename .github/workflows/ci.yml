@@ -37,3 +37,7 @@ jobs:
 
       - name: Test
         run: flutter test
+
+      - name: Android unit tests
+        run: ./gradlew testDebugUnitTest
+        working-directory: smartgrab/android

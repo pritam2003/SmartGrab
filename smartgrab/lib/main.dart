@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -399,6 +401,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _online = false;
   String _lastRecommendation = '';
   DateTime? _lastRecommendationTime;
+  bool _debugEnabled = false;
+  String _lastCapture = '';
+  DateTime? _lastCaptureTime;
+  String _lastCaptureApp = '';
+  int _lastCaptureCount = 0;
+  Timer? _debugTimer;
   bool _loading = true;
   bool _saving = false;
 
@@ -410,6 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _debugTimer?.cancel();
     _minPayController.dispose();
     _maxDistanceController.dispose();
     _costPerKmController.dispose();
@@ -425,6 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final lastTime = await _bridge.getLastRecommendationTime();
       final settings = await _bridge.getDecisionSettings();
       final online = await _bridge.getOnline();
+      final debugSnapshot = await _bridge.getDebugSnapshot();
 
       _minPayController.text = settings.minPay.toStringAsFixed(2);
       _maxDistanceController.text = settings.maxDistanceKm.toStringAsFixed(1);
@@ -436,12 +446,43 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastRecommendation = lastRec;
         _lastRecommendationTime = lastTime;
         _online = online;
+        _debugEnabled = debugSnapshot.enabled;
+        _lastCapture = debugSnapshot.lastCapture;
+        _lastCaptureTime = debugSnapshot.lastCaptureTime;
+        _lastCaptureApp = debugSnapshot.lastCaptureApp;
+        _lastCaptureCount = debugSnapshot.lastCaptureCount;
       });
+      _configureDebugTimer(debugSnapshot.enabled);
     } finally {
       if (mounted) {
         setState(() => _loading = false);
       }
     }
+  }
+
+  void _configureDebugTimer(bool enabled) {
+    if (enabled) {
+      _debugTimer?.cancel();
+      _debugTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _refreshCapture(),
+      );
+    } else {
+      _debugTimer?.cancel();
+      _debugTimer = null;
+    }
+  }
+
+  Future<void> _refreshCapture() async {
+    final debugSnapshot = await _bridge.getDebugSnapshot();
+    if (!mounted) return;
+    setState(() {
+      _debugEnabled = debugSnapshot.enabled;
+      _lastCapture = debugSnapshot.lastCapture;
+      _lastCaptureTime = debugSnapshot.lastCaptureTime;
+      _lastCaptureApp = debugSnapshot.lastCaptureApp;
+      _lastCaptureCount = debugSnapshot.lastCaptureCount;
+    });
   }
 
   Future<void> _saveSettings() async {
@@ -470,6 +511,29 @@ class _HomeScreenState extends State<HomeScreen> {
     await _bridge.setOnline(next);
     await _userService.setOnline(widget.profile.uid, next);
     setState(() => _online = next);
+  }
+
+  Future<void> _toggleDebug(bool enabled) async {
+    await _bridge.setDebugEnabled(enabled);
+    if (!mounted) return;
+    setState(() => _debugEnabled = enabled);
+    if (enabled) {
+      await _refreshCapture();
+      _configureDebugTimer(true);
+    } else {
+      _configureDebugTimer(false);
+    }
+  }
+
+  Future<void> _clearCapture() async {
+    await _bridge.clearLastCapture();
+    if (!mounted) return;
+    setState(() {
+      _lastCapture = '';
+      _lastCaptureTime = null;
+      _lastCaptureApp = '';
+      _lastCaptureCount = 0;
+    });
   }
 
   Future<void> _simulateOffer() async {
@@ -598,6 +662,87 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 16),
         _SectionCard(
+          title: 'Live Debug',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Capture screen text'),
+                  Switch(
+                    value: _debugEnabled,
+                    onChanged: _toggleDebug,
+                  ),
+                ],
+              ),
+              Text(
+                'Enable to preview the text captured from DoorDash/Instacart.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _formatCaptureTime(_lastCaptureTime),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _lastCaptureApp.isEmpty
+                    ? 'Source app: —'
+                    : 'Source app: $_lastCaptureApp',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Captured lines: $_lastCaptureCount',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                height: 160,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withAlpha(38),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    _lastCapture.isEmpty
+                        ? 'No capture yet. Open DoorDash or Instacart with an offer visible.'
+                        : _lastCapture,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _refreshCapture,
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Refresh'),
+                  ),
+                  TextButton(
+                    onPressed: _clearCapture,
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _SectionCard(
           title: 'Decision Settings',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -641,6 +786,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final date =
         '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
     return 'Last update: $date $hour:$minute';
+  }
+
+  String _formatCaptureTime(DateTime? time) {
+    if (time == null) return 'No captures yet.';
+    final local = time.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final date =
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+    return 'Last capture: $date $hour:$minute';
   }
 }
 
@@ -857,12 +1012,57 @@ class PlatformBridge {
     await _channel.invokeMethod('setDecisionSettings', settings.toMap());
   }
 
+  Future<bool> getDebugEnabled() async {
+    return (await _channel.invokeMethod<bool>('getDebugEnabled')) ?? false;
+  }
+
   Future<bool> getOnline() async {
     return (await _channel.invokeMethod<bool>('getOnline')) ?? false;
   }
 
   Future<void> setOnline(bool online) async {
     await _channel.invokeMethod('setOnline', online);
+  }
+
+  Future<void> setDebugEnabled(bool enabled) async {
+    await _channel.invokeMethod('setDebugEnabled', enabled);
+  }
+
+  Future<String> getLastCapture() async {
+    return (await _channel.invokeMethod<String>('getLastCapture')) ?? '';
+  }
+
+  Future<DateTime?> getLastCaptureTime() async {
+    final millis = await _channel.invokeMethod<int>('getLastCaptureTime');
+    if (millis == null || millis == 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(millis);
+  }
+
+  Future<String> getLastCaptureApp() async {
+    return (await _channel.invokeMethod<String>('getLastCaptureApp')) ?? '';
+  }
+
+  Future<int> getLastCaptureCount() async {
+    return (await _channel.invokeMethod<int>('getLastCaptureCount')) ?? 0;
+  }
+
+  Future<void> clearLastCapture() async {
+    await _channel.invokeMethod('clearLastCapture');
+  }
+
+  Future<DebugSnapshot> getDebugSnapshot() async {
+    final enabled = await getDebugEnabled();
+    final lastCapture = await getLastCapture();
+    final lastCaptureTime = await getLastCaptureTime();
+    final lastCaptureApp = await getLastCaptureApp();
+    final lastCaptureCount = await getLastCaptureCount();
+    return DebugSnapshot(
+      enabled: enabled,
+      lastCapture: lastCapture,
+      lastCaptureTime: lastCaptureTime,
+      lastCaptureApp: lastCaptureApp,
+      lastCaptureCount: lastCaptureCount,
+    );
   }
 
   Future<void> simulateOffer(OfferSimulation offer) async {
@@ -907,6 +1107,22 @@ class OfferSimulation {
         'pay': pay,
         'distanceKm': distanceKm,
       };
+}
+
+class DebugSnapshot {
+  const DebugSnapshot({
+    required this.enabled,
+    required this.lastCapture,
+    required this.lastCaptureTime,
+    required this.lastCaptureApp,
+    required this.lastCaptureCount,
+  });
+
+  final bool enabled;
+  final String lastCapture;
+  final DateTime? lastCaptureTime;
+  final String lastCaptureApp;
+  final int lastCaptureCount;
 }
 
 class UserProfile {

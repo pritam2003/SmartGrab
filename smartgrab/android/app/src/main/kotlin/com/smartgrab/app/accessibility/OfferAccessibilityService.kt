@@ -42,11 +42,19 @@ class OfferAccessibilityService : AccessibilityService() {
         if (!SUPPORTED_PACKAGES.contains(packageName)) return
 
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (!prefs.getBoolean(KEY_ONLINE, false)) return
+        val online = prefs.getBoolean(KEY_ONLINE, false)
+        val debugEnabled = prefs.getBoolean(KEY_DEBUG, false)
+        if (!online && !debugEnabled) return
 
         val root = rootInActiveWindow ?: return
         val texts = mutableListOf<String>()
         collectText(root, texts)
+
+        if (debugEnabled) {
+            saveCapture(packageName, texts)
+        }
+
+        if (!online) return
 
         val offer = OfferParser.parse(packageName, texts) ?: return
         if (offer.app == GigApp.UNKNOWN) return
@@ -103,12 +111,41 @@ class OfferAccessibilityService : AccessibilityService() {
             .apply()
     }
 
+    private fun saveCapture(packageName: String, texts: List<String>) {
+        if (texts.isEmpty()) return
+        val unique = LinkedHashSet<String>()
+        texts.forEach { value ->
+            val trimmed = value.trim()
+            if (trimmed.isNotEmpty()) unique.add(trimmed)
+        }
+        val combined = unique.joinToString(separator = "\n")
+        val safeText = if (combined.length > MAX_CAPTURE_CHARS) {
+            combined.substring(0, MAX_CAPTURE_CHARS)
+        } else {
+            combined
+        }
+
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(KEY_LAST_CAPTURE, safeText)
+            .putLong(KEY_LAST_CAPTURE_TIME, System.currentTimeMillis())
+            .putString(KEY_LAST_CAPTURE_APP, packageName)
+            .putInt(KEY_LAST_CAPTURE_COUNT, unique.size)
+            .apply()
+    }
+
     companion object {
         private const val PREFS = "smartgrab"
         private const val KEY_LAST_RECOMMENDATION = "last_recommendation"
         private const val KEY_LAST_TIME = "last_recommendation_time"
         private const val KEY_ONLINE = "online"
+        private const val KEY_DEBUG = "debug_enabled"
+        private const val KEY_LAST_CAPTURE = "last_capture"
+        private const val KEY_LAST_CAPTURE_TIME = "last_capture_time"
+        private const val KEY_LAST_CAPTURE_APP = "last_capture_app"
+        private const val KEY_LAST_CAPTURE_COUNT = "last_capture_count"
         private const val MIN_REPEAT_MS = 4000L
+        private const val MAX_CAPTURE_CHARS = 4000
 
         private val SUPPORTED_PACKAGES = setOf(
             "com.doordash.driverapp",
